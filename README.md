@@ -160,6 +160,23 @@ thresholding that nearly every scanner pipeline ends with would erase it outrigh
 Zero third-party dependencies (system Vision + CoreImage only), fully offline.
 macOS 13+.
 
+## 商业授权与联系
+
+本程序采用 MIT + Commons Clause，**禁止转售**。如需商业使用授权
+（例如在公司产品中集成、提供付费服务），请通过 Issues 联系：
+
+👉 **https://github.com/hengjunguo35-oss/photo-to-scan/issues**
+
+推荐用 Issues 而不是邮箱，原因有三：
+
+1. **不暴露作者的邮箱**，避免被爬虫收集
+2. **公开透明**，其他人的同类问题也能参考
+3. **有记录**，双方权责清晰
+
+一般性问题、Bug 反馈、功能建议也欢迎提 Issue。
+
+---
+
 ## License
 
 **MIT + Commons Clause** — 见 [LICENSE](LICENSE)。
