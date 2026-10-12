@@ -1,3 +1,26 @@
+“Commons Clause” License Condition v1.0
+
+The Software is provided to you by the Licensor under the License, as defined
+below, subject to the following condition.
+
+Without limiting other conditions in the License, the grant of rights under the
+License will not include, and the License does not grant to you, the right to
+Sell the Software.
+
+For purposes of the foregoing, “Sell” means practicing any or all of the rights
+granted to you under the License to provide to third parties, for a fee or
+other consideration (including without limitation fees for hosting or
+consulting/support services related to the Software), a product or service
+whose value derives, entirely or substantially, from the functionality of the
+Software. Any license notice or attribution required by the License must also
+include this Commons Clause License Condition notice.
+
+Software: photo-to-scan
+License: MIT
+Licensor: hengjunguo35-oss
+
+================================================================================
+
 MIT License
 
 Copyright (c) 2026 hengjunguo35-oss
@@ -19,3 +42,22 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+================================================================================
+
+【中文说明 · 仅供参考，法律效力以上方英文原文为准】
+
+本程序采用 MIT 许可证，并附加 Commons Clause 条件。通俗地说：
+
+  ✅ 你可以：使用、复制、修改、合并、发布、分发本程序；
+            在公司或组织内部使用；
+            把它用在你的个人项目里。
+
+  ❌ 你不可以：出售本程序，或出售价值主要来自本程序功能的衍生产品/服务；
+              包括但不限于：把本程序包装后收费、提供以本程序为核心的付费托管
+              或咨询支持服务。
+
+  ℹ️ 商业使用如需授权，请联系仓库作者。
+
+注意：由于附加了 Commons Clause 限制，本程序属于 source-available（源码开放），
+而非 OSI 定义下的 open source（开源）。两者不是一回事，请勿混淆。
