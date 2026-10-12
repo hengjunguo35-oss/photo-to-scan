@@ -1,0 +1,21 @@
+# 编译产物
+scan
+*.app/
+.build/
+
+# 运行时产物
+扫描件输出/
+待扫描/
+已扫描/
+日志/
+*扫描件*.png
+*扫描件*.pdf
+
+# 测试与临时
+/scan-work/
+*.o
+*.dSYM/
+
+# macOS
+.DS_Store
+._*
