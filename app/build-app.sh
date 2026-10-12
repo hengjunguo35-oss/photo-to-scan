@@ -47,6 +47,7 @@ export TMPDIR="$WORK/tmp"
 
 SRC="$DIR/../src/scan.swift"
 MINOS="${SCAN_MINOS:-13.0}"      # 可用 SCAN_MINOS 覆盖最低系统版本
+VERSION="${SCAN_VERSION:-1.0.0}" # 可用 SCAN_VERSION 覆盖版本号
 
 build_arch() {  # $1 = x86_64 / arm64
   echo "    编译 $1 (macOS $MINOS+)…"
@@ -90,6 +91,10 @@ P="$APP/Contents/Info.plist"
   || /usr/libexec/PlistBuddy -c "Add :CFBundleName string photo-to-scan" "$P"
 /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Photo2Scan" "$P" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string io.github.photo2scan" "$P" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $VERSION" "$P" 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$P"
+/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $VERSION" "$P" 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$P"
 /usr/libexec/PlistBuddy -c "Add :NSHighResolutionCapable bool true" "$P" 2>/dev/null || true
 
 # ad-hoc 签名（--sign -）。必需的：改动 bundle 内容后不重新签名，

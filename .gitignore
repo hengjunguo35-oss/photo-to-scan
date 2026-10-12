@@ -19,3 +19,4 @@ scan
 # macOS
 .DS_Store
 ._*
+dist/
