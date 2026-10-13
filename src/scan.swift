@@ -426,8 +426,30 @@ func autoOrient(_ img: CIImage) -> String {
     let r0 = lineAxisRatio(img)
     let rCW = lineAxisRatio(rotate(img, "cw"))
     log(String(format: "auto-orient: lineAxis(0)=%.3f lineAxis(cw)=%.3f", r0, rCW))
+
+    // ── 先判断投影信号是否「明确」──
+    // 画面里若有大块非文字内容（例如文档中嵌入的照片），它会冲淡文字行的
+    // 投影起伏，使两个方向几乎打平。实测某文档：0.947 vs 1.064 ——
+    // 这时再按 "<1.0" 的硬阈值判断，本质上是在抛硬币。
+    // 所以信号不够明确（比值 < 1.25）时，改用更稳的版面比例兜底。
+    let hi = max(r0, rCW), lo = max(min(r0, rCW), 1e-6)
+    if hi / lo < 1.25 {
+        let e = img.extent
+        let portrait = e.height >= e.width
+        log(String(format: "auto-orient: 投影信号不明确（比值 %.2f），改用版面比例 → %@",
+                   hi / lo, portrait ? "竖版，不转" : "横版，转 90°"))
+        if portrait {
+            let b0 = redTopBias(img)
+            let b180 = redTopBias(rotate(img, "180"))
+            return b0 >= b180 ? "0" : "180"
+        }
+        let bCW = redTopBias(rotate(img, "cw"))
+        let bCCW = redTopBias(rotate(img, "ccw"))
+        return bCW >= bCCW ? "cw" : "ccw"
+    }
+
     // 透视校正后页面已是矩形；若横方向的投影起伏更大，说明文字/格线已经是横的
-    if r0 < 1.0 && rCW >= 1.0 {
+    if r0 < rCW {
         let bCW = redTopBias(rotate(img, "cw"))
         let bCCW = redTopBias(rotate(img, "ccw"))
         log(String(format: "auto-orient: redTopBias(cw)=%.4f redTopBias(ccw)=%.4f", bCW, bCCW))
