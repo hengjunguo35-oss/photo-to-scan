@@ -709,7 +709,10 @@ struct Opts {
     var bw = false
     var flatten = true
     var doDeskew = true
-    var minGain = 1.15
+    // 默认 1.02。曾经用 1.15，但那会导致真实的轻微倾斜被误判成「没有行结构」
+    // 而跳过纠偏（实测三个样本里有两个 gain 只有 1.03~1.04）。
+    // 纠偏本身带自检（纠正后重测，变差就回退），所以放宽是安全的。
+    var minGain = 1.02
 }
 
 /// 处理单张照片的完整流程。批处理模式会反复调用它。
@@ -750,7 +753,7 @@ func parseOpts(_ a: [String], from: Int) -> (Opts, String?, String?)? {
         case "--rot":       i += 1; if i < a.count { o.rot = a[i] }
         case "--pdf":       i += 1; if i < a.count { pdf = a[i] }
         case "--inset":     i += 1; if i < a.count { o.insetPx = CGFloat(Double(a[i]) ?? 8) }
-        case "--skewgain":  i += 1; if i < a.count { o.minGain = Double(a[i]) ?? 1.15 }
+        case "--skewgain":  i += 1; if i < a.count { o.minGain = Double(a[i]) ?? 1.02 }
         default:
             if out == nil { out = a[i] } else { log("unexpected arg \(a[i])"); return nil }
         }
@@ -790,7 +793,7 @@ if mode == "batch" {
         case "--nodeskew":  o.doDeskew = false
         case "--rot":       i += 1; if i < a.count { o.rot = a[i] }
         case "--inset":     i += 1; if i < a.count { o.insetPx = CGFloat(Double(a[i]) ?? 8) }
-        case "--skewgain":  i += 1; if i < a.count { o.minGain = Double(a[i]) ?? 1.15 }
+        case "--skewgain":  i += 1; if i < a.count { o.minGain = Double(a[i]) ?? 1.02 }
         default:            files.append(a[i])
         }
         i += 1

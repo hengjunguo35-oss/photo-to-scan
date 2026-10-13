@@ -90,7 +90,7 @@ open photo-to-scan.app
 |---|---|---|
 | `--rot auto\|cw\|ccw\|0\|180` | `auto` | 旋转方向。`auto` 用投影方差比判断横竖，用「红色抬头在顶部」判断 0/180 与 cw/ccw |
 | `--nodeskew` | 关 | 关闭自动纠偏 |
-| `--skewgain N` | `1.15` | 纠偏生效阈值：投影方差至少提升 N 倍才动手 |
+| `--skewgain N` | `1.02` | 纠偏生效阈值：投影方差至少提升 N 倍才动手 |
 | `--noflatten` | 关 | 关闭去阴影/增白（照片光照本就很均匀时用） |
 | `--bw` | 关 | 输出灰度高对比版本（红格线会变灰） |
 | `--inset N` | `8` | 四边内缩像素，去掉照片边缘残留的桌面颜色 |
@@ -142,7 +142,7 @@ python3 tools/measure.py 成品.png
 | 现象 | 处理 |
 |---|---|
 | 方向转错 | `--rot cw` / `--rot ccw` 手动指定 |
-| 格线还是歪 | 看日志 `deskew:` 行；若 `variance gain < 1.15` 说明没有明显行结构，可加 `--skewgain 1.02` |
+| 格线还是歪 | 看日志 `deskew:` 行；若 `variance gain < 1.02` 说明确实没有行结构 |
 | 纸面发灰 | 检查是否误加了 `--noflatten` |
 | 裁掉了正文 | 纸张检测偏了，看日志 `quad source:` 是 `printed frame` 还是 `Vision document segmentation` |
 | 单张特别慢 | 正常（模型加载）。改用 `batch` |
