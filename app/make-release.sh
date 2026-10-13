@@ -42,9 +42,15 @@ echo "[1/4] 构建 App…"
 SCAN_VERSION="$VERSION" "$DIR/build-app.sh" "$DIST" >/dev/null
 echo "      引擎架构: $(lipo -archs "$APP/Contents/Resources/scan-tool/scan")"
 
-# ── 2. 用后即焚的说明文件一并放进包里 ──
+# ── 2. 写安装说明到打包暂存目录 ──
+# ★ 注意：这份说明必须放进**暂存目录**，而不是 $DIST 顶层。
+#   之前它写在 $DIST 下，但 DMG 只打包了 .app、ZIP 也只 ditto 了 .app，
+#   结果用户拿到安装包时根本看不到这份说明。
 echo "[2/4] 写入安装说明…"
-cat > "$DIST/安装说明.txt" <<'EOF'
+STAGE="$DIST/Photo2Scan-$VERSION"
+rm -rf "$STAGE"
+mkdir -p "$STAGE"
+cat > "$STAGE/安装说明.txt" <<'EOF'
 Photo2Scan —— 把纸质文件的照片变成扫描件
 
 【安装】
@@ -75,12 +81,20 @@ echo "[3/4] 打包 DMG 与 ZIP…"
 DMG="$DIST/$APPNAME-$VERSION.dmg"
 ZIP="$DIST/$APPNAME-$VERSION-macos.zip"
 
+# .app 复制进暂存目录，与安装说明放在一起
+cp -R "$APP" "$STAGE/"
+
+# DMG：暂存目录的**内容**（.app + 安装说明.txt）落在 DMG 根目录
 hdiutil create -volname "Photo2Scan $VERSION" \
-  -srcfolder "$DIST/$APPNAME.app" \
+  -srcfolder "$STAGE" \
   -ov -format UDZO "$DMG" >/dev/null
 
-# ditto 保留 bundle 结构与扩展属性；--keepParent 让解压后直接得到 .app
-ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
+# ZIP：ditto 保留 bundle 结构与扩展属性。
+# 不加 --keepParent，让解压后直接得到 .app 和 安装说明.txt（而不是多一层文件夹）
+ditto -c -k --sequesterRsrc "$STAGE" "$ZIP"
+
+# 暂存目录只用于打包，产物已生成，清掉避免混进 dist 列表
+rm -rf "$STAGE"
 
 # ── 4. 校验和 ──
 echo "[4/4] 计算校验和…"

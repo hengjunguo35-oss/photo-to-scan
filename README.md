@@ -2,7 +2,7 @@
 
 > 一个免费、源码公开的图片扫描工具 · **禁止转售**
 
-> 🌐 English version: **[README.en.md](README.en.md)**
+> 🌐 English version: **[README.en.md](README.en.md)**　·　📋 [更新日志](CHANGELOG.md)
 
 > ⚠️ **仅供个人学习、研究与交流使用。商业使用需另行获得授权。**
 > 使用前请阅读 [免责声明与使用条款](免责声明.md) 与 [LICENSE](LICENSE)（MIT + Commons Clause）。

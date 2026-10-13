@@ -59,6 +59,17 @@ let ctx = CIContext(options: [.useSoftwareRenderer: false])
 /// 这样调用方可以直接解析 stdout，人类看 stderr。
 func log(_ s: String) { FileHandle.standardError.write((s + "\n").data(using: .utf8)!) }
 
+// ── 红色判据 ──
+// 三处用途不同，阈值也不该相同；集中在这里，便于统一调整：
+//   frame —— 找印刷边框：必须严格，否则木桌的棕色会被误判成边框
+//   bias  —— 红色抬头定位：可宽松些，只需在四个方向之间比大小
+//   ink   —— 墨迹掩膜：最宽松，参与投影统计，宁可多收不可漏
+enum Red {
+    static let frameR = 100, frameDelta = 55
+    static let biasR  = 110, biasDelta  = 35
+    static let inkR   = 100, inkDelta   = 30
+}
+
 let T0 = Date()
 /// 打印「距程序启动已过多少秒」，用于定位性能瓶颈。
 /// 当初正是靠它发现：单张处理耗时 57 秒里，有 50 秒卡在 Vision 模型加载上，
@@ -70,8 +81,25 @@ func mark(_ s: String) { log(String(format: "[%6.2fs] %@", Date().timeIntervalSi
 /// 且不依赖 AppKit，让引擎可以完全脱离图形界面运行。
 func loadCG(_ path: String) -> CGImage? {
     let url = URL(fileURLWithPath: path)
-    guard let s = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-    return CGImageSourceCreateImageAtIndex(s, 0, nil)
+    guard let s = CGImageSourceCreateWithURL(url as CFURL, nil),
+          let cg = CGImageSourceCreateImageAtIndex(s, 0, nil) else { return nil }
+
+    // ★ 应用 EXIF 方向标记。
+    // iPhone 竖拍的照片，像素数据常常是横着存的，靠 EXIF Orientation 告诉
+    // 看图软件「显示时转过来」。如果不处理，后面的自动定向就只能靠猜 ——
+    // 遇到没有清晰行结构（黑白文档、纯照片）的图，一猜就错。
+    // 从源头把方向摆正，可以整类消掉这个问题。
+    guard let props = CGImageSourceCopyPropertiesAtIndex(s, 0, nil) as? [CFString: Any],
+          let raw = props[kCGImagePropertyOrientation] as? UInt32,
+          let ori = CGImagePropertyOrientation(rawValue: raw),
+          ori != .up else { return cg }
+
+    let o = CIImage(cgImage: cg).oriented(ori)
+    let e = o.extent
+    let shifted = o.transformed(by: CGAffineTransform(translationX: -e.origin.x, y: -e.origin.y))
+    guard let out = ctx.createCGImage(shifted, from: shifted.extent) else { return cg }
+    log("已应用 EXIF 方向标记 \(raw)：\(cg.width)x\(cg.height) → \(out.width)x\(out.height)")
+    return out
 }
 
 /// 把 CIImage 的 extent 原点平移回 (0,0)。
@@ -96,17 +124,25 @@ func rotate(_ img: CIImage, _ rot: String) -> CIImage {
 }
 
 /// 输出 PNG，并写入 DPI 元数据（默认 300），保证打印时物理尺寸正确。
-func savePNG(_ image: CIImage, _ path: String, dpi: CGFloat) {
+/// ★ 失败时返回 false，**不退出进程**。
+/// 批处理里若一张写不进去就 exit，后面所有照片会被无声跳过 —— 这是必须避免的。
+@discardableResult
+func savePNG(_ image: CIImage, _ path: String, dpi: CGFloat) -> Bool {
     let img = normalizeOrigin(image)
-    guard let cg = ctx.createCGImage(img, from: img.extent) else { log("createCGImage failed"); exit(2) }
+    guard let cg = ctx.createCGImage(img, from: img.extent) else {
+        log("PNG 渲染失败：createCGImage 返回 nil"); return false
+    }
     let url = URL(fileURLWithPath: path) as CFURL
     guard let dest = CGImageDestinationCreateWithURL(url, "public.png" as CFString, 1, nil) else {
-        log("cannot write \(path)"); exit(2)
+        log("无法写入 \(path)（目录不存在、无权限或文件名非法）"); return false
     }
     let props: [CFString: Any] = [kCGImagePropertyDPIWidth: dpi, kCGImagePropertyDPIHeight: dpi]
     CGImageDestinationAddImage(dest, cg, props as CFDictionary)
-    if !CGImageDestinationFinalize(dest) { log("finalize failed"); exit(2) }
+    guard CGImageDestinationFinalize(dest) else {
+        log("PNG 写入失败（磁盘空间不足？）：\(path)"); return false
+    }
     log("wrote \(path)  \(Int(img.extent.width))x\(Int(img.extent.height))")
+    return true
 }
 
 // ---------- document edge detection ----------
@@ -153,7 +189,7 @@ func frameQuad(_ img: CIImage) -> [CGPoint]? {
             let i = (row + x) * 4
             let r = Int(buf[i]), g = Int(buf[i + 1]), b = Int(buf[i + 2])
             // 必须是「红占绝对主导」的鲜红：木桌的棕色也饱和，但红分量不会这么突出
-            if r > 100 && r - max(g, b) > 55 { pts.append((Double(x), Double(y))) }
+            if r > Red.frameR && r - max(g, b) > Red.frameDelta { pts.append((Double(x), Double(y))) }
         }
     }
     guard pts.count > 300 else { return nil }
@@ -381,7 +417,7 @@ func redTopBias(_ img: CIImage) -> Double {
         for x in 0..<sw {
             let i = (y * sw + x) * 4
             let r = Int(buf[i]), g = Int(buf[i + 1]), b = Int(buf[i + 2])
-            guard r > 110, r - max(g, b) > 35 else { continue }
+            guard r > Red.biasR, r - max(g, b) > Red.biasDelta else { continue }
             total += 1
             if y < sh / 5 { top += 1 } else if y > sh * 4 / 5 { bottom += 1 }
         }
@@ -436,16 +472,25 @@ func autoOrient(_ img: CIImage) -> String {
     if hi / lo < 1.25 {
         let e = img.extent
         let portrait = e.height >= e.width
-        log(String(format: "auto-orient: 投影信号不明确（比值 %.2f），改用版面比例 → %@",
-                   hi / lo, portrait ? "竖版，不转" : "横版，转 90°"))
-        if portrait {
-            let b0 = redTopBias(img)
-            let b180 = redTopBias(rotate(img, "180"))
-            return b0 >= b180 ? "0" : "180"
+        log(String(format: "auto-orient: 投影信号不明确（比值 %.2f）", hi / lo))
+
+        // 四个方向全试一遍，取「红色抬头最靠上」的那个。
+        // 旧实现只看横竖两个方向，于是「横放且上下颠倒」的页面永远纠正不了。
+        var bestRot = "0"
+        var bestBias = -Double.infinity
+        for cand in ["0", "cw", "ccw", "180"] {
+            let b = redTopBias(rotate(img, cand))
+            if b > bestBias { bestBias = b; bestRot = cand }
         }
-        let bCW = redTopBias(rotate(img, "cw"))
-        let bCCW = redTopBias(rotate(img, "ccw"))
-        return bCW >= bCCW ? "cw" : "ccw"
+        if bestBias > 0.02 {
+            log(String(format: "auto-orient: 按红色抬头位置选 %@ (bias %.4f)", bestRot, bestBias))
+            return bestRot
+        }
+
+        // 页面里没有红色可用 → 退回版面比例（绝大多数文档是竖版、文字横排）
+        log(String(format: "auto-orient: 无红色可用，按版面比例 → %@",
+                   portrait ? "竖版，不转" : "横版，转 90°"))
+        return portrait ? "0" : "cw"
     }
 
     // 透视校正后页面已是矩形；若横方向的投影起伏更大，说明文字/格线已经是横的
@@ -477,7 +522,7 @@ func inkMask(_ img: CIImage, _ sw: Int) -> (mask: [UInt8], w: Int, h: Int) {
         let r = Int(buf[i * 4]), g = Int(buf[i * 4 + 1]), b = Int(buf[i * 4 + 2])
         let luma = (299 * r + 587 * g + 114 * b) / 1000
         // dark ink, or saturated red (the printed ruling lines / heading)
-        if luma < 190 || (r - max(g, b) > 30 && r > 100) { mask[i] = 1 }
+        if luma < 190 || (r - max(g, b) > Red.inkDelta && r > Red.inkR) { mask[i] = 1 }
     }
     return (mask, sw, sh)
 }
@@ -671,14 +716,18 @@ func scanLook(_ img: CIImage, bw: Bool, flatten: Bool) -> CIImage {
 ///
 /// 用 CGPDFContext 直接绘制，不经任何第三方 PDF 库。
 /// 页面尺寸按毫米换算成点（1 毫米 = 72/25.4 点）。
-func savePDF(_ image: CIImage, _ path: String, mmW: CGFloat, mmH: CGFloat, marginMM: CGFloat) {
+/// ★ 同 savePNG：失败返回 false，不退出进程。
+@discardableResult
+func savePDF(_ image: CIImage, _ path: String, mmW: CGFloat, mmH: CGFloat, marginMM: CGFloat) -> Bool {
     let img = normalizeOrigin(image)
-    guard let cg = ctx.createCGImage(img, from: img.extent) else { log("createCGImage failed"); exit(2) }
+    guard let cg = ctx.createCGImage(img, from: img.extent) else {
+        log("PDF 渲染失败：createCGImage 返回 nil"); return false
+    }
     let box = CGRect(x: 0, y: 0, width: mmW * 72 / 25.4, height: mmH * 72 / 25.4)
     var mediaBox = box
     guard let consumer = CGDataConsumer(url: URL(fileURLWithPath: path) as CFURL),
           let pdf = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else {
-        log("cannot write \(path)"); exit(2)
+        log("无法写入 \(path)（目录不存在或无权限）"); return false
     }
     pdf.beginPDFPage(nil)
     pdf.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
@@ -692,6 +741,7 @@ func savePDF(_ image: CIImage, _ path: String, mmW: CGFloat, mmH: CGFloat, margi
     pdf.endPDFPage()
     pdf.closePDF()
     log("wrote \(path)  A4 \(Int(mmW))x\(Int(mmH))mm")
+    return true
 }
 
 /// 四边内缩若干像素。
@@ -699,7 +749,20 @@ func savePDF(_ image: CIImage, _ path: String, mmW: CGFloat, mmH: CGFloat, margi
 /// 超出纸张），内缩掉即可，内容损失可以忽略。
 func inset(_ img: CIImage, _ px: CGFloat) -> CIImage {
     guard px > 0 else { return img }
-    return normalizeOrigin(img.cropped(to: img.extent.insetBy(dx: px, dy: px)))
+    let e = img.extent
+    let short = min(e.width, e.height)
+    // ★ 内缩量不能超过短边的一半，否则 insetBy 会产出负尺寸矩形，
+    //   cropped(to:) 得到空图甚至崩溃。这里做一次 clamp。
+    let hardLimit = short / 2 - 2
+    var p = px
+    if p > hardLimit {
+        log("--inset \(Int(px)) 过大（图像仅 \(Int(e.width))x\(Int(e.height))），已限制为 \(Int(hardLimit))")
+        p = hardLimit
+    } else if p > short / 4 {
+        log("提示：--inset \(Int(px)) 超过短边的 25%，输出会被裁掉很大一块，确认是你想要的效果")
+    }
+    guard p > 0 else { return img }
+    return normalizeOrigin(img.cropped(to: e.insetBy(dx: p, dy: p)))
 }
 
 // ---------- main ----------
@@ -733,9 +796,11 @@ func runOne(_ inPath: String, out: String?, pdf: String?, _ o: Opts) -> Bool {
     if o.doDeskew { page = deskew(page, minGain: o.minGain) }
     page = inset(page, o.insetPx)
     let look = scanLook(page, bw: o.bw, flatten: o.flatten)
-    if let out { savePNG(look, out, dpi: 300) }
-    if let pdf { savePDF(look, pdf, mmW: 210, mmH: 297, marginMM: 4) }
-    return true
+    // 两种输出彼此独立：一个失败仍要尝试另一个，最后统一汇报
+    var wrote = true
+    if let out { if !savePNG(look, out, dpi: 300) { wrote = false } }
+    if let pdf { if !savePDF(look, pdf, mmW: 210, mmH: 297, marginMM: 4) { wrote = false } }
+    return wrote
 }
 
 /// 解析命令行参数。
@@ -750,10 +815,19 @@ func parseOpts(_ a: [String], from: Int) -> (Opts, String?, String?)? {
         case "--bw":        o.bw = true
         case "--noflatten": o.flatten = false
         case "--nodeskew":  o.doDeskew = false
-        case "--rot":       i += 1; if i < a.count { o.rot = a[i] }
-        case "--pdf":       i += 1; if i < a.count { pdf = a[i] }
-        case "--inset":     i += 1; if i < a.count { o.insetPx = CGFloat(Double(a[i]) ?? 8) }
-        case "--skewgain":  i += 1; if i < a.count { o.minGain = Double(a[i]) ?? 1.02 }
+        // 缺值时报错退出，不要静默吞掉 —— 否则用户以为参数生效了，其实没有
+        case "--rot":
+            guard i + 1 < a.count else { log("--rot 缺少参数值"); return nil }
+            i += 1; o.rot = a[i]
+        case "--pdf":
+            guard i + 1 < a.count else { log("--pdf 缺少参数值"); return nil }
+            i += 1; pdf = a[i]
+        case "--inset":
+            guard i + 1 < a.count else { log("--inset 缺少参数值"); return nil }
+            i += 1; o.insetPx = CGFloat(Double(a[i]) ?? 8)
+        case "--skewgain":
+            guard i + 1 < a.count else { log("--skewgain 缺少参数值"); return nil }
+            i += 1; o.minGain = Double(a[i]) ?? 1.02
         default:
             if out == nil { out = a[i] } else { log("unexpected arg \(a[i])"); return nil }
         }
@@ -791,14 +865,21 @@ if mode == "batch" {
         case "--bw":        o.bw = true
         case "--noflatten": o.flatten = false
         case "--nodeskew":  o.doDeskew = false
-        case "--rot":       i += 1; if i < a.count { o.rot = a[i] }
-        case "--inset":     i += 1; if i < a.count { o.insetPx = CGFloat(Double(a[i]) ?? 8) }
-        case "--skewgain":  i += 1; if i < a.count { o.minGain = Double(a[i]) ?? 1.02 }
+        case "--rot":
+            guard i + 1 < a.count else { log("--rot 缺少参数值"); exit(1) }
+            i += 1; o.rot = a[i]
+        case "--inset":
+            guard i + 1 < a.count else { log("--inset 缺少参数值"); exit(1) }
+            i += 1; o.insetPx = CGFloat(Double(a[i]) ?? 8)
+        case "--skewgain":
+            guard i + 1 < a.count else { log("--skewgain 缺少参数值"); exit(1) }
+            i += 1; o.minGain = Double(a[i]) ?? 1.02
         default:            files.append(a[i])
         }
         i += 1
     }
     var ok = 0, bad = 0
+    var failed: [String] = []
     for f in files {
         let base = (f as NSString).lastPathComponent
         let stem = (base as NSString).deletingPathExtension
@@ -811,23 +892,33 @@ if mode == "batch" {
             n += 1
         }
         mark("start \(stem)")
-        if runOne(f, out: png, pdf: pdf, o) { ok += 1; mark("done  \(stem)") } else { bad += 1 }
+        if runOne(f, out: png, pdf: pdf, o) {
+            ok += 1; mark("done  \(stem)")
+        } else {
+            // ★ 失败不中断整批：继续处理后面的文件
+            bad += 1; failed.append(stem); mark("FAILED \(stem)")
+        }
     }
-    print("BATCH|\(ok)|\(bad)")
+    // 第 4 个字段是失败文件名（分号分隔），供外壳脚本判断哪些源文件不该归档
+    print("BATCH|\(ok)|\(bad)|\(failed.joined(separator: ";"))")
     exit(bad == 0 ? 0 : 1)
 }
 
-// ---- 调试模式（需要单张输入）----
+// ---- 调试模式 ----
+// ★ 先把参数校验做完再干活。透视校正要 20~30 秒（Vision 模型加载），
+//   参数写错了却先跑一遍再报「unknown mode」，纯属浪费用户时间。
+guard mode == "correct" else {
+    log("unknown mode: \(mode)（可用：process / batch / correct）")
+    exit(1)
+}
+guard a.count >= 4 else {
+    log("usage: scan correct <in> <out.png>")
+    exit(1)
+}
+
 guard let cg = loadCG(a[2]) else { log("cannot load \(a[2])"); exit(1) }
 let base = CIImage(cgImage: cg)
 let corrected = perspectiveCorrect(base, cg)
 log("corrected: \(Int(corrected.extent.width))x\(Int(corrected.extent.height))")
 
-
-if mode == "correct" {
-    savePNG(corrected, a[3], dpi: 300)
-    exit(0)
-}
-
-log("unknown mode \(mode)")
-exit(1)
+exit(savePNG(corrected, a[3], dpi: 300) ? 0 : 1)

@@ -10,7 +10,7 @@
 > feel free to open an issue or send a pull request. Contributions to both the code and
 > the documentation are warmly welcome.
 >
-> The Chinese version is the authoritative one: **[README.md](README.md)**
+> The Chinese version is the authoritative one: **[README.md](README.md)** · [Changelog](CHANGELOG.md)
 
 > ⚠️ **For personal study, research and non-commercial use only. Commercial use requires a
 > separate licence.** Please read the [Disclaimer & Terms](DISCLAIMER.en.md) and the

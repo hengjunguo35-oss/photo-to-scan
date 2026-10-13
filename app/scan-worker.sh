@@ -25,6 +25,10 @@
 #  ------------------------------------------------
 #    RESULT|<成功数>|<失败数>|<输出目录>|<待扫描目录>|<失败文件名列表>
 #
+#    第 6 个字段以前永远是空的（引擎只报数量、不报名字），现在由引擎的
+#    BATCH 行第 4 个字段提供，转成空格分隔后放进这里，外壳才能真正显示
+#    「失败：xxx.jpg」。
+#
 #  环境变量
 #  --------
 #    SCAN_WORKDIR   自定义工作文件夹，默认 ~/Documents/扫描仪
@@ -73,25 +77,47 @@ LOGFILE="$LOGDIR/运行记录-$(date +%Y%m%d-%H%M%S).log"
 rc=$?
 
 # ── 从日志里解析批量结果 ──
-# 引擎在 stdout 最后打印一行 BATCH|<ok>|<bad>。
+# 引擎在 stdout 最后打印：BATCH|<成功>|<失败>|<失败文件名，分号分隔>
 # 如果没解析到（比如引擎崩溃），就按退出码粗略判断，保证外壳总能拿到合法返回值。
-ok=0; bad=0
+ok=0; bad=0; failed=""
+have_result=0
 line="$(grep -a '^BATCH|' "$LOGFILE" | tail -1)"
 if [ -n "$line" ]; then
+  have_result=1
   ok="$(echo "$line" | cut -d'|' -f2)"
   bad="$(echo "$line" | cut -d'|' -f3)"
+  failed="$(echo "$line" | cut -d'|' -f4)"
 elif [ "$rc" -eq 0 ]; then
+  have_result=1
   ok="${#files[@]}"
 else
+  # 引擎整个挂掉（崩溃、二进制缺失…）：既没有名单，也不知道谁成功，
+  # 只能全部计为失败，并且**一个源文件都不归档**（见下面的 have_result 判断）
   bad="${#files[@]}"
 fi
 
-# ── 归档源文件 ──
+# ── 归档源文件（★ 只归档成功的）──
 # 只有「待扫描」模式才归档（避免下次重复处理同一张）。
 # 拖拽进来的文件是用户自己的，动它不礼貌，原地不动。
-if [ "$from_args" -eq 0 ] && [ "${ok:-0}" != "0" ]; then
-  for f in "${files[@]}"; do [ -f "$f" ] && mv -f "$f" "$DONE/" 2>/dev/null; done
+#
+# 关键修正：以前只要 ok != 0 就把**全部**源文件移走，包括失败的 ——
+# 于是失败的照片既没提示、又消失不见，用户会以为全部成功。
+# 现在失败的留在「待扫描」，下次双击就能重试。
+# ★ 只有「确知哪些成功」时才归档。
+#   引擎整个挂掉时 have_result=0，此时失败名单是空的 —— 若照旧逻辑遍历归档，
+#   会把**一张都没处理过**的源文件全部移走，用户彻底懵。
+if [ "$from_args" -eq 0 ] && [ "$have_result" -eq 1 ]; then
+  for f in "${files[@]}"; do
+    stem="$(basename "${f%.*}")"
+    case ";${failed};" in
+      *";${stem};"*) continue ;;     # 在失败名单里 → 留在原处，方便重试
+    esac
+    [ -f "$f" ] && mv -f "$f" "$DONE/" 2>/dev/null
+  done
 fi
 
-echo "RESULT|$ok|$bad|$OUTDIR|$INBOX|"
+# 失败名单转成空格分隔，供外壳直接拼进提示文字
+failed_display="$(echo "$failed" | tr ';' ' ' | sed 's/^ *//;s/ *$//')"
+
+echo "RESULT|$ok|$bad|$OUTDIR|$INBOX|$failed_display"
 exit 0
